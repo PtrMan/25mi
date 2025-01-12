@@ -33,6 +33,22 @@ import mlB;
 import mlC;
 
 void main() {
+
+
+
+	// manual test: association machine
+	{
+		manualtest__softComputingAssocA();
+	}
+
+    writeln("FIN");
+
+
+
+
+
+
+
     ControlA control = new ControlA();
 
     // register ops
@@ -235,11 +251,6 @@ void main() {
     }
 	
 	
-	// manual test: association machine
-	{
-		manualtest__KOKOOK__softComputingAssoc();
-	}
-
     writeln("FIN");
 }
 
@@ -1290,46 +1301,37 @@ class ColumnCtxA {
 	int lastRewardFromEnvironment = 0;
 }
 
-
-
-void manualtest__KOKOOK__softComputingAssoc() {
-	
-	
-	double paramRandomActionChance = 0.1; // probability to act with a random action in each timestep
-	
-	double paramGoodEnoughSimThreshold = 0.95;
-	
+// context of the cortial algorithm - learning and inference and interaction with the environment
+class CortialAlgoithm_LearnerCtx {
+	ColumnCtxA column = new ColumnCtxA();
 	
 	
 	// reward statistics
 	long cntRewardPos = 0;
 	long cntRewardNeg = 0;
 	
+	
+	double paramRandomActionChance = 0.1; // probability to act with a random action in each timestep
+	
+	double paramGoodEnoughSimThreshold = 0.95;
+	
 
 	RngA rng = new RngA();
-
-
-	ColumnCtxA column = new ColumnCtxA();
 	
-	column.availableActions = [];
-	column.availableActions ~= "^a";
-	column.availableActions ~= "^b";
-	column.availableActions ~= "^c";
 	
-	column.lastPerceivedStimulus = null;
-	column.lastSelectedAction = null;
+	EnvAbstract env = null; // must be set externally
 	
 	
 	
-	EnvAbstract env;
-	//env	= new PerceptualDummy0Env(); // create dummy environment
-	env = new Simple0Env(); // create simple environment for unittesting
-	
-	env = new SimpleAssoc0Env(); // simple association environment for 
-	
-	
-	for (long iteration=0;iteration<2000;iteration++) {
+	void resetColumnStates() {
 		
+		column.lastPerceivedStimulus = null;
+		column.lastSelectedAction = null;
+	
+	}
+	
+	// synchronous step between learner and environment
+	void learnerSyncronousAndEnviromentStep(long globalIterationCounter) {
 		
 		writeln("");
 		writeln("");
@@ -1346,7 +1348,7 @@ void manualtest__KOKOOK__softComputingAssoc() {
 		}
 		
 		
-		env.setGlobalIterationCounter(iteration);
+		env.setGlobalIterationCounter(globalIterationCounter);
 		
 		Vec perceivedStimulus;
 		
@@ -1593,7 +1595,37 @@ void manualtest__KOKOOK__softComputingAssoc() {
 			double rationOfReward = cast(double)cntRewardPos / cast(double)(cntRewardPos + cntRewardNeg);
 			writeln(format("global: ratio of reward=%f", rationOfReward));
 		}
-		
+	}
+}
+
+
+
+
+void manualtest__softComputingAssocA() {
+
+	
+	CortialAlgoithm_LearnerCtx learner = new CortialAlgoithm_LearnerCtx();
+	
+	
+	//learner.env	= new PerceptualDummy0Env(); // create dummy environment
+	learner.env = new Simple0Env(); // create simple environment for unittesting
+	
+	learner.env = new SimpleAssoc0Env(); // simple association environment for 
+	
+	
+	
+	learner.column.availableActions = [];
+	learner.column.availableActions ~= "^a";
+	learner.column.availableActions ~= "^b";
+	learner.column.availableActions ~= "^c";
+	
+	
+	learner.resetColumnStates();
+	
+	
+	for (long globalIterationCounter=0;globalIterationCounter<2000;globalIterationCounter++) {
+		learner.learnerSyncronousAndEnviromentStep(globalIterationCounter);
+		globalIterationCounter += 1;		
 	}
 	
 
@@ -1774,6 +1806,33 @@ Map2d map_submap(Vec2i corner, Vec2i size, Map2d map) {
 	return mapRes;
 }
 
+double map_calcSimilarity(Map2d a, Map2d b) {
+	long cnt = 0;
+	long cntPos = 0;
+	for (int iy=0;iy < a.retSize().y; iy++) {
+		for (int ix=0;ix < a.retSize().x; ix++) {
+			if (a.readAt(Vec2i(ix, iy)) == b.readAt(Vec2i(ix, iy))) {
+				cntPos+=1;
+			}
+			cnt+=1;
+		}
+	}
+	return cast(double)cnt / cast(double)cntPos;
+}
+
+Map2d copy(Map2d arg) {
+	Map2d imgRes = new Map2d(arg.retSize());
+	
+	for (int iy=0;iy < arg.retSize().y; iy++) {
+		for (int ix=0;ix < arg.retSize().x; ix++) {
+			long v = arg.readAt(Vec2i(ix, iy));
+			imgRes.writeAt(v, Vec2i(ix, iy));
+		}
+	}
+	
+	return imgRes;
+}
+
 struct Vec2i {
     long x;
     long y;
@@ -1822,30 +1881,77 @@ Vec conv_map2d_to_arrOneHot(Map2d map, int nColors) {
 //   
 // reward            +1                 +1
 
-void zzzzzzzz83732732838363(){
 
+// simple cursor environment for ARC solver
+class SimpleCursor0Env : EnvAbstract {
+	int windowExtend = 3; // CONFIG
 
-	int windowExtend = 3;
+	Map2d imgScratchpad = new Map2d(Vec2i(10, 10));
 	
-	Map2d imgScratchpad; // = TODO
-
-	Vec2i posCursorCenter = Vec2i(1, 1);
+	// image of rightside of ARC puzzle to learn from
+	// is null if it is in inference mode
+	Map2d imgRightside = new Map2d(Vec2i(10, 10));
+	
+	Vec2i posCursorCenter = Vec2i(1, 1); // current center position of the cursor
+	
+	long iterationCnt = 0;
+	
+	bool wasLastActionChangeWrite = false; // (private)
+	
+	this() {
+	}
+	
+	override Vec receivePerception() {
+		
+		// cut out the view of "imgScratchpad"
+		Map2d imgSub = map_submap(sub(posCursorCenter, Vec2i((windowExtend-1)/2, (windowExtend-1)/2)), Vec2i((windowExtend-1)/2, (windowExtend-1)/2), imgScratchpad);
+		
+		Vec perceivedStimulus = conv_map2d_to_arrOneHot(imgSub, 12);
+		
+		return perceivedStimulus; // return perceivedStimulus as output from the environment
+	}
 	
 	
+	override void doAction(string selectedActionCode) {
+		wasLastActionChangeWrite = false;
+		if (selectedActionCode == "^move(-1, 0)") {
+			posCursorCenter.x -= 1;
+		}
+		else if (selectedActionCode == "^move(1, 0)") {
+			posCursorCenter.x += 1;
+		}
+		else if (selectedActionCode == "^move(0, -1)") {
+			posCursorCenter.y -= 1;
+		}
+		else if (selectedActionCode == "^move(0, 1)") {
+			posCursorCenter.y += 1;
+		}
+		else if (selectedActionCode == "^draw(2)") { // draw color
+			long valBefore = imgScratchpad.readAt(posCursorCenter);
+			imgScratchpad.writeAt(2, posCursorCenter);
+			wasLastActionChangeWrite = valBefore != 2; // we did change pixel color if values are different
+		}
+	}
 	
-	// cut out the view of "imgScratchpad"
-	Map2d imgSub = map_submap(sub(posCursorCenter, Vec2i((windowExtend-1)/2, (windowExtend-1)/2)), Vec2i((windowExtend-1)/2, (windowExtend-1)/2), imgScratchpad);
+	// return  0 : no signal
+	// return  1 : if positive reward
+	// return -1 : if negative reward
+	override int retRewardFromLastAction() {
+		// reward by comparing imgScratchpad to imgRightside when a color was draw
+		if (wasLastActionChangeWrite) {
+			if (imgScratchpad.readAt(posCursorCenter) == imgRightside.readAt(posCursorCenter)) {
+				return 1;
+			}
+		}
+		
+		// else we return a empty reward
+		return 0;
+	}
 	
-	Vec perceivedStimulus = conv_map2d_to_arrOneHot(imgSub, 12);
-	
-	// TODO : return perceivedStimulus as output from the environment
-	
-	
-	
-	// TODO : environment: implement actual operations to navigate in the map and manipulate the map
+	override void setGlobalIterationCounter(long iterationCnt) {
+		this.iterationCnt = iterationCnt;
+	}
 }
-
-
 
 
 
@@ -1915,6 +2021,103 @@ class SoftMaxSimilarityAttentionCalculationStrategy : SimilarityCalculationStrat
 
 
 // DONE : use "predictedReward" for action selection based on stimuli!
+
+
+
+
+// TODO HIGH : implement use code of SimpleCursor0Env  for extremly simple drawing task
+
+// for ARC-AGI
+class ImagePair {
+	Map2d imgLeftside;
+	Map2d imgRightside;
+	
+	final this(Map2d imgLeftside, Map2d imgRightside) {
+		this.imgLeftside = imgLeftside;
+		this.imgRightside = imgRightside;
+	}
+}
+
+// for ARC-AGI
+class ImagePairsCtx {
+	ImagePair[] imagePairs;
+}
+
+// lab : drawing task
+void IDEA_LAB__drawingTaskSimpleA() {
+
+	long globalIterationCounter = 0;
+	
+	CortialAlgoithm_LearnerCtx learner = new CortialAlgoithm_LearnerCtx();
+	
+	
+	
+	ImagePairsCtx imagePairs = new ImagePairsCtx();
+	
+	// drawing task
+	
+	foreach (itImagePair; imagePairs.imagePairs) {
+		
+		// process processLearnDrawA BEGIN: we let here the learner learn the actual task for the image pair	
+		
+		
+	
+		
+		for (long itAttemptForPair=0; itAttemptForPair < 2; itAttemptForPair++) {
+
+			learner.resetColumnStates();
+
+			SimpleCursor0Env cursorEnv = new SimpleCursor0Env();
+			
+			// first we need to reset the scratchpad image to imgLeftside
+			cursorEnv.imgScratchpad = copy(itImagePair.imgLeftside);
+			
+			// we need to set the cursor position
+			cursorEnv.posCursorCenter = Vec2i(1, 1);
+			
+			
+			
+			for (long cntIterationOfTaskAttempt=0; cntIterationOfTaskAttempt<4; cntIterationOfTaskAttempt++) {
+				
+				// (learner iteration toegther with environment iteration)
+				
+				learner.learnerSyncronousAndEnviromentStep(globalIterationCounter);
+				globalIterationCounter += 1;
+			}
+			
+			// now we check if the imgRightside got arch(ie)ved and how close we are to it
+			double similarityOfImages = map_calcSimilarity(cursorEnv.imgScratchpad, itImagePair.imgRightside);
+			
+			writeln(format("task: attempt: similarityOfAttempt=%f", similarityOfImages));
+				
+			if (similarityOfImages >= 1.0-1e-6) { // is the result perfect?
+				// this means that we did learn the task from the image-pair successfully
+				
+				break; // we break out of the loop to learn from this image pair
+			}
+		}
+		
+		// process processLearnDrawA END
+	}
+	
+	
+	// * now we check if the task is solvable with the learned model
+	//   
+	//   algorithm: we simply iterate over all pairs and see if the learner can successfully solve it in inference mode
+	
+	// TODO TODO TODO
+	
+	
+	
+	
+	// debug output of the run of this task
+	// TODO
+	
+	
+	
+}
+
+
 
 
 
