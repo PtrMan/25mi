@@ -37,8 +37,14 @@ void main() {
 
 
 	// manual test: association machine
-	{
+	if (false) {
 		manualtest__softComputingAssocA();
+	}
+	
+	
+	// unitest for ARC solver based on association machine
+	{
+		IDEA_LAB__drawingTaskSimpleA();
 	}
 
     writeln("FIN");
@@ -1787,10 +1793,17 @@ class Map2d {
     }
 
     public final long readAt(Vec2i pos) {
+		if (pos.x < 0 || pos.x >= retSize().x || pos.y < 0 || pos.y >= retSize().y) {
+			// TODO : return default value of datatype
+			return 0;
+		}
         return arr[ pos.x + width*pos.y ];
     }
 
     public final void writeAt(long v, Vec2i pos) {
+		if (pos.x < 0 || pos.x >= retSize().x || pos.y < 0 || pos.y >= retSize().y) {
+			return;
+		}
         arr[ pos.x + width*pos.y ] = v;
     }
 }
@@ -2049,6 +2062,21 @@ void IDEA_LAB__drawingTaskSimpleA() {
 	long globalIterationCounter = 0;
 	
 	CortialAlgoithm_LearnerCtx learner = new CortialAlgoithm_LearnerCtx();
+	
+	
+	
+	learner.env = new SimpleCursor0Env(); // we set the environment to simple cursor for ARC environment
+	
+	
+	
+	learner.column.availableActions = [];
+	learner.column.availableActions ~= "^move(-1, 0)";
+	learner.column.availableActions ~= "^move(1, 0)";
+	learner.column.availableActions ~= "^move(0, -1)";
+	learner.column.availableActions ~= "^move(0, 1)";
+	learner.column.availableActions ~= "^draw(2)";
+	
+	
 	
 	
 	
