@@ -2054,9 +2054,30 @@ void IDEA_LAB__drawingTaskSimpleA() {
 	
 	ImagePairsCtx imagePairs = new ImagePairsCtx();
 	
+	// add actual pair for UNITTEST
+	{
+		Map2d imgLeftside;
+		Map2d imgRightside;
+		
+		Vec2i sizeImg = Vec2i(3, 3);
+		
+		imgLeftside = new Map2d(sizeImg);
+		imgLeftside.writeAt(1, Vec2i(1, 1));
+		imgRightside = new Map2d(sizeImg);
+		imgRightside.writeAt(2, Vec2i(1, 1));
+		
+		ImagePair createdImagePair = new ImagePair(imgLeftside, imgRightside);
+		imagePairs.imagePairs ~= createdImagePair;
+	}
+	
+	
+	
 	// drawing task
 	
 	foreach (itImagePair; imagePairs.imagePairs) {
+	
+		writeln("");
+		writeln("task: learn based on image pair ...");
 		
 		// process processLearnDrawA BEGIN: we let here the learner learn the actual task for the image pair	
 		
@@ -2064,7 +2085,9 @@ void IDEA_LAB__drawingTaskSimpleA() {
 	
 		
 		for (long itAttemptForPair=0; itAttemptForPair < 2; itAttemptForPair++) {
-
+			
+			writeln(format("task:    itAttempt=%d", itAttemptForPair));
+			
 			learner.resetColumnStates();
 
 			SimpleCursor0Env cursorEnv = new SimpleCursor0Env();
@@ -2078,6 +2101,8 @@ void IDEA_LAB__drawingTaskSimpleA() {
 			
 			
 			for (long cntIterationOfTaskAttempt=0; cntIterationOfTaskAttempt<4; cntIterationOfTaskAttempt++) {
+				
+				writeln(format("task:       cntIterationOfTaskAttempt=%d", cntIterationOfTaskAttempt));
 				
 				// (learner iteration toegther with environment iteration)
 				
