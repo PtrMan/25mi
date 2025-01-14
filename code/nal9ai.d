@@ -324,6 +324,7 @@ class CortialAlgoithm_LearnerCtx {
 	
 	}
 	
+	
 	// synchronous step between learner and environment
 	void learnerSyncronousAndEnviromentStep(long globalIterationCounter) {
 		
@@ -346,94 +347,14 @@ class CortialAlgoithm_LearnerCtx {
 		
 		Vec perceivedStimulus;
 		
-		
-		/*
-		perceivedStimulus = new Vec([0.01, 0.9, cos(iteration*333.3), cos(iteration*3.3)]);
-		
-		Map2d map0 = new Map2d(Vec2i(3, 3));
-		map0.writeAt(1, Vec2i(iteration % map0.retSize().x, 2));
-		
-		perceivedStimulus = conv_map2d_to_arrOneHot(map0, 12);
-		*/
-		
 		perceivedStimulus = env.receivePerception();
-		
 		
 		writeln(format("perceived stimulus= %s", perceivedStimulus.arr));
 		
 		
 		
 		// build contigency from past observation, past action and current stimulus and update in memory
-		//
-		// NOTE : we only update if it is similar enough to existing condition
-		{
-			
-			
-			if (column.lastPerceivedStimulus !is null) {
-				
-				bool wasMatchFound = false;
-				
-				// search for match
-				SimilarityCalculationStrategy similarityCalcStrategy = new SoftMaxSimilarityCalculationStrategy();
-				double[] arrSim = similarityCalcStrategy.calcMatchingScore__by__stimulus(column.lastPerceivedStimulus, column.ctx);
-				
-				// DEBUG
-				writeln("");
-				writeln("sim to perceived contigency:");
-				writeln(arrSim);
-				
-				
-				
-				// decide if the match is good enough
-				{
-					long idxBest = -1;
-					double valBest = -2.0;
-					for (long itIdx=0; itIdx<arrSim.length; itIdx++) {
-						if (column.lastSelectedAction == column.ctx.units[itIdx].actionCode) { // action must be the same to count as the same
-							if (arrSim[itIdx] > valBest) {
-								idxBest = itIdx;
-								valBest = arrSim[itIdx];
-							}
-						}
-					}
-					
-					if (valBest > paramGoodEnoughSimThreshold) {
-						
-						// make sure that the action is the same. I guess this is very important that actions which dont get reward by matching die off at some point.
-						if (column.ctx.units[idxBest].actionCode == column.lastSelectedAction) {
-							wasMatchFound = true;
-							
-							// reward unit
-							// TODO LOW
-						}
-					}
-				}
-				
-				if (!wasMatchFound) {
-					// we add a new unit if no match was found
-					
-					// we add a new unit
-					UnitB createdUnit = new UnitB(randomUUID().toString());
-					createdUnit.v = column.lastPerceivedStimulus;
-					createdUnit.attentionMask = vecMake(1.0, createdUnit.v.arr.length); // attention mask which doesn't change any channels by default (to make testing easier)
-					createdUnit.actionCode = column.lastSelectedAction;
-					createdUnit.consequenceVec = perceivedStimulus;
-					
-					createdUnit.predictedReward = column.lastRewardFromEnvironment; // attach reward to be able to predict reward
-					// TODO LOW : revise predictedReward via some clever formula when a good enough unit was found
-					
-					// reward created unit
-					createdUnit.unitEvidence.addPositive();
-					
-					
-					column.ctx.units ~= createdUnit;
-					// TODO : care about AIKR here
-					
-					writeln("");
-					writeln("DBG :  created new unit by contingency");
-				}
-			}
-		}
+		buildContingencyFromPastObservation(perceivedStimulus);
 		
 		
 		
@@ -589,6 +510,98 @@ class CortialAlgoithm_LearnerCtx {
 			writeln("");
 			double rationOfReward = cast(double)cntRewardPos / cast(double)(cntRewardPos + cntRewardNeg);
 			writeln(format("global: ratio of reward=%f", rationOfReward));
+		}
+	}
+	
+	// give the learner a chance to learn from the last step
+	void finish() {
+		Vec perceivedStimulus;
+		
+		perceivedStimulus = env.receivePerception();
+		
+		writeln(format("perceived stimulus= %s", perceivedStimulus.arr));
+		
+		
+		
+		// build contigency from past observation, past action and current stimulus and update in memory
+		buildContingencyFromPastObservation(perceivedStimulus);
+	}
+	
+	
+	
+	
+	
+	
+	// (private)
+	//
+	// build contigency from past observation, past action and current stimulus and update in memory
+	//
+	void buildContingencyFromPastObservation(Vec perceivedStimulus) {
+		// NOTE : we only update if it is similar enough to existing condition
+		
+		if (column.lastPerceivedStimulus !is null) {
+			
+			bool wasMatchFound = false;
+			
+			// search for match
+			SimilarityCalculationStrategy similarityCalcStrategy = new SoftMaxSimilarityCalculationStrategy();
+			double[] arrSim = similarityCalcStrategy.calcMatchingScore__by__stimulus(column.lastPerceivedStimulus, column.ctx);
+			
+			// DEBUG
+			writeln("");
+			writeln("sim to perceived contigency:");
+			writeln(arrSim);
+			
+			
+			
+			// decide if the match is good enough
+			{
+				long idxBest = -1;
+				double valBest = -2.0;
+				for (long itIdx=0; itIdx<arrSim.length; itIdx++) {
+					if (column.lastSelectedAction == column.ctx.units[itIdx].actionCode) { // action must be the same to count as the same
+						if (arrSim[itIdx] > valBest) {
+							idxBest = itIdx;
+							valBest = arrSim[itIdx];
+						}
+					}
+				}
+				
+				if (valBest > paramGoodEnoughSimThreshold) {
+					
+					// make sure that the action is the same. I guess this is very important that actions which dont get reward by matching die off at some point.
+					if (column.ctx.units[idxBest].actionCode == column.lastSelectedAction) {
+						wasMatchFound = true;
+						
+						// reward unit
+						// TODO LOW
+					}
+				}
+			}
+			
+			if (!wasMatchFound) {
+				// we add a new unit if no match was found
+				
+				// we add a new unit
+				UnitB createdUnit = new UnitB(randomUUID().toString());
+				createdUnit.v = column.lastPerceivedStimulus;
+				createdUnit.attentionMask = vecMake(1.0, createdUnit.v.arr.length); // attention mask which doesn't change any channels by default (to make testing easier)
+				createdUnit.actionCode = column.lastSelectedAction;
+				createdUnit.consequenceVec = perceivedStimulus;
+				
+				createdUnit.predictedReward = column.lastRewardFromEnvironment; // attach reward to be able to predict reward
+				// TODO LOW : revise predictedReward via some clever formula when a good enough unit was found
+				
+				// reward created unit
+				createdUnit.unitEvidence.addPositive();
+				
+				
+				column.ctx.units ~= createdUnit;
+				// TODO : care about AIKR here
+				
+				writeln("");
+				writeln("DBG :  created new unit by contingency");
+			}
 		}
 	}
 }
@@ -1083,14 +1096,15 @@ void IDEA_LAB__drawingTaskSimpleA() {
 	
 	
 	learner.column.availableActions = [];
-	learner.column.availableActions ~= "^move(-1, 0)";
+	//learner.column.availableActions ~= "^move(-1, 0)";
 	learner.column.availableActions ~= "^move(1, 0)";
-	learner.column.availableActions ~= "^move(0, -1)";
-	learner.column.availableActions ~= "^move(0, 1)";
+	//learner.column.availableActions ~= "^move(0, -1)";
+	//learner.column.availableActions ~= "^move(0, 1)";
 	learner.column.availableActions ~= "^draw(2)";
 	
 	
-	
+	// code which encodes the task
+	string[] taskCode = ["2"];
 	
 	
 	ImagePairsCtx imagePairs = new ImagePairsCtx();
@@ -1100,12 +1114,21 @@ void IDEA_LAB__drawingTaskSimpleA() {
 		Map2d imgLeftside;
 		Map2d imgRightside;
 		
-		Vec2i sizeImg = Vec2i(3, 3);
+		Vec2i sizeImg = Vec2i(5, 5);
 		
 		imgLeftside = new Map2d(sizeImg);
 		imgLeftside.writeAt(1, Vec2i(1, 1));
 		imgRightside = new Map2d(sizeImg);
 		imgRightside.writeAt(2, Vec2i(1, 1));
+		
+		if (taskCode[0] == "1") {
+			imgRightside.writeAt(2, Vec2i(2, 1));
+		}
+		
+		if (taskCode[0] == "2") {
+			imgRightside.writeAt(2, Vec2i(2, 1));
+			imgRightside.writeAt(2, Vec2i(3, 1));
+		}
 		
 		ImagePair createdImagePair = new ImagePair(imgLeftside, imgRightside);
 		imagePairs.imagePairs ~= createdImagePair;
@@ -1127,7 +1150,7 @@ void IDEA_LAB__drawingTaskSimpleA() {
 		
 	
 		
-		for (long itAttemptForPair=0; itAttemptForPair < 10; itAttemptForPair++) {
+		for (long itAttemptForPair=0; itAttemptForPair < 100; itAttemptForPair++) {
 			
 			writeln(format("task:    itAttempt=%d", itAttemptForPair));
 			
@@ -1156,7 +1179,7 @@ void IDEA_LAB__drawingTaskSimpleA() {
 			
 			
 			
-			for (long cntIterationOfTaskAttempt=0; cntIterationOfTaskAttempt<3; cntIterationOfTaskAttempt++) {
+			for (long cntIterationOfTaskAttempt=0; cntIterationOfTaskAttempt<5; cntIterationOfTaskAttempt++) {
 				
 				writeln(format("task:       cntIterationOfTaskAttempt=%d", cntIterationOfTaskAttempt));
 				
@@ -1165,6 +1188,9 @@ void IDEA_LAB__drawingTaskSimpleA() {
 				learner.learnerSyncronousAndEnviromentStep(globalIterationCounter);
 				globalIterationCounter += 1;
 			}
+			
+			// give leanrer a chance to learn from last observation
+			learner.finish();
 			
 			
 			// debug image to terminal
@@ -1205,6 +1231,10 @@ void IDEA_LAB__drawingTaskSimpleA() {
 	//   
 	//   algorithm: we simply iterate over all pairs and see if the learner can successfully solve it in inference mode
 	
+	// TODO TODO TODO
+	// TODO TODO TODO
+	// TODO TODO TODO
+	// TODO TODO TODO
 	// TODO TODO TODO
 	
 	
