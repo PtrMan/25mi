@@ -91,6 +91,22 @@ Vec append(Vec a, Vec b) {
     return new Vec(arr);
 }
 
+Vec add(Vec a, Vec b) {
+	double[] arr;
+	for (long i=0; i<a.arr.length; i++) {
+		arr ~= (a.arr[i] + b.arr[i]);
+	}
+	return new Vec(arr);
+}
+
+Vec scale(Vec v, double s) {
+	double[] arr;
+    foreach (iv; v.arr) {
+        arr ~= (iv*s);
+    }
+	return new Vec(arr);
+}
+
 Vec vecMake(double v, long size) {
 	double[] arr;
 	for (long i=0; i<size; i++) {

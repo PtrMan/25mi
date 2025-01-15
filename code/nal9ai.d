@@ -239,6 +239,159 @@ class HardMaxSimilarityCalculationStrategy : SimilarityCalculationStrategy {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// temporarily holds the result of the planning
+class AlgorithmResult__Planning {
+	string firstActionActionCode; // actionCode of the first action which the planning algorithm has computed
+	double expectedRewardSum = 0.0; // exptected reward sum for the selected action
+}
+
+// use of predicted input for 
+// mechanism:
+// a) feed input X to column to predict input X which follows, together with the action and reward
+// b) goto a)
+
+// TODO IDEA: we could predict the next input and the reward with NN which are trained.
+
+AlgorithmResult__Planning LAB__cortialAlgorithm__planning_A(Vec stimulus, ColumnCtxA columnCtx, int nPlanningDepth) {
+
+
+
+	//int nPlanningDepth = 1; // how many iterations are done for planning
+	//int nPlanningDepth = 4; // how many iterations are done for planning
+	
+
+	Vec iteratedStimulus = stimulus;
+	
+	double expectedRewardSum = 0.0; // sum of rewards of the "path"
+	string firstActionActionCode = null;
+	
+	if (columnCtx.ctx.units.length > 0) { // there must be units to vote on
+		for(int itPlanningDepth=0;itPlanningDepth<nPlanningDepth;itPlanningDepth++) {
+			// vote for best unit
+			VotingWeightsOfUnits votingWeights = iteratedPlanning__voteUnitsAsVotingWeights(iteratedStimulus, columnCtx);
+			
+			// select winner unit weights
+			VotingWeightsOfUnits votingWeightsAfterSelectingWinner = iteratedPlanning__selectWinnerUnitVector(votingWeights);
+			
+			if (itPlanningDepth == 0) {
+				firstActionActionCode = columnCtx.ctx.units[ calcIndexWithHighestValue(votingWeightsAfterSelectingWinner) ].actionCode;
+			}
+			
+			expectedRewardSum += (calcWeightedPredictedReward(votingWeightsAfterSelectingWinner.v, columnCtx) * exp(-cast(double)itPlanningDepth * 0.9));
+			
+			// compute prediction of predicted output by vector
+			Vec vecPredicted = computePredictedVector(votingWeightsAfterSelectingWinner, columnCtx);
+			
+			iteratedStimulus = vecPredicted; // feed as stimulus for next iteration
+		}
+	}
+	
+	
+	// now we have a action "firstActionActionCode" which leads to a possible path with expected reward = "expectedRewardSum"
+	
+	// we have to do this a few times and select the action which gives us the highest expected reward
+	
+	// TODO : implement outer loop
+	
+	AlgorithmResult__Planning res = new AlgorithmResult__Planning();
+	res.firstActionActionCode = firstActionActionCode;
+	res.expectedRewardSum = expectedRewardSum;
+	
+	return res;
+}
+
+
+// typed helper class to give a vector which is the normalized weight a type
+class VotingWeightsOfUnits {
+	Vec v;
+	
+	final this(Vec v) {
+		this.v = v;
+	}
+}
+
+VotingWeightsOfUnits iteratedPlanning__voteUnitsAsVotingWeights(Vec stimulus, ColumnCtxA columnCtx) {
+	
+	SimilarityCalculationStrategy similarityCalcStrategy;
+	similarityCalcStrategy = new SoftMaxSimilarityCalculationStrategy();
+	//similarityCalcStrategy = new SoftMaxSimilarityAttentionCalculationStrategy(); // use attention strategy
+	double[] arrSim = similarityCalcStrategy.calcMatchingScore__by__stimulus(stimulus, columnCtx.ctx);
+	
+	return new VotingWeightsOfUnits( normalize( new Vec(arrSim) ) );
+}
+
+
+VotingWeightsOfUnits iteratedPlanning__selectWinnerUnitVector(VotingWeightsOfUnits votingWeights) {
+	
+	long maxIdx = 0;
+	double maxValue = -double.max;
+	foreach (itIdx, itVal; votingWeights.v.arr) {
+		if (itVal > maxValue) {
+			maxValue = itVal;
+			maxIdx = itIdx;
+		}
+	}
+	
+	Vec vecOneHot = oneHotEncode(maxIdx, votingWeights.v.arr.length);
+	
+	return new VotingWeightsOfUnits(vecOneHot);
+}
+
+double calcWeightedPredictedReward(Vec v, ColumnCtxA columnCtx) {
+	double res = 0.0;
+	for (int idx=0; idx<v.arr.length; idx++) {
+		res += ( v.arr[idx] * columnCtx.ctx.units[idx].predictedReward );
+	}
+	return res;
+}
+
+Vec computePredictedVector(VotingWeightsOfUnits votingWeights, ColumnCtxA columnCtx) {
+	Vec res = makeVecByLength(columnCtx.ctx.units[0].consequenceVec.arr.length);
+	
+	for (int idxUnit=0; idxUnit<columnCtx.ctx.units.length; idxUnit++) {
+		res = add( scale(columnCtx.ctx.units[idxUnit].consequenceVec, votingWeights.v.arr[idxUnit]), res);
+	}
+	
+	return res;
+}
+
+
+
+int calcIndexWithHighestValue(VotingWeightsOfUnits votingWeights) {
+	return calcHighestValueIdx(votingWeights.v);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // TODO : implement soft mapper of
 // observed state + action -> effect state
 //
@@ -248,35 +401,6 @@ class HardMaxSimilarityCalculationStrategy : SimilarityCalculationStrategy {
 
 
 
-
-// compute the action which has the highest votes
-// 
-// result is the actionCode with the highest number of votes
-string calc__action__byVotingMax(CtxZZZ ctx, double[] arrSim) {
-	double[string] voteStrengthByAction;
-	
-	foreach (itIdx, itUnit; ctx.units) {
-		string associatedActionOfUnit = itUnit.actionCode;
-		
-		if (!(associatedActionOfUnit in voteStrengthByAction)) {
-			voteStrengthByAction[associatedActionOfUnit] = 0.0;
-		}
-		
-		voteStrengthByAction[associatedActionOfUnit] += arrSim[itIdx];
-	}
-	
-	// search max
-	double maxVotingVal = -double.max;
-	string maxVotingActionCode = null;
-	foreach (itKey, itValue; voteStrengthByAction) {
-		if (voteStrengthByAction[itKey] > maxVotingVal) {
-			maxVotingVal = voteStrengthByAction[itKey];
-			maxVotingActionCode = itKey;
-		}
-	}
-	
-	return maxVotingActionCode;
-}
 
 
 
@@ -294,6 +418,19 @@ class ColumnCtxA {
 	// -1 is negative reward
 	int lastRewardFromEnvironment = 0;
 }
+
+/*
+
+learner is based on following ideas:
+
+* cortial algorithms as core methodology of substrate
+
+* computing similarity between neurons :  modern hopfield neural networds
+* unsupervised learning of prediction  :  hierachical temporal memory (HTM) theory
+
+* TODO : decision making by voting of multiple column: TODO : searhc paper from hawkins
+
+*/
 
 // context of the cortial algorithm - learning and inference and interaction with the environment
 class CortialAlgoithm_LearnerCtx {
@@ -376,20 +513,75 @@ class CortialAlgoithm_LearnerCtx {
 		
 		
 		
+		
+		/* commented because DEPRECTAED because new functionality can do this much better!
+		
 		// we need to mask units which learned negative reward so that we don't pick actions which lead to negative reward
+		double[] arrPredictedReward = [];
 		for (long itIdx=0; itIdx<arrSim.length; itIdx++) {
-			if (column.ctx.units[itIdx].predictedReward < 0) { // check if is enough negative reward
-				arrSim[itIdx] = 0.0; // mask similarity so it wont get selected as next action
-			}
+			//if (column.ctx.units[itIdx].predictedReward < 0) { // check if is enough negative reward
+				//arrSim[itIdx] = 0.0; // mask similarity so it wont get selected as next action
+				arrPredictedReward ~= column.ctx.units[itIdx].predictedReward;
+			//}
 		}
 		
 		
 		
+
+		// compute the action which has the highest votes
+		// 
+		// result is the actionCode with the highest number of votes
+		string calc__action__byVotingMax(CtxZZZ ctx, double[] arrSim, double[] arrPredictedReward) {
+			double[string] voteStrengthByAction;
+			
+			foreach (itIdx, itUnit; ctx.units) {
+				string associatedActionOfUnit = itUnit.actionCode;
+				
+				if (!(associatedActionOfUnit in voteStrengthByAction)) {
+					voteStrengthByAction[associatedActionOfUnit] = 0.0;
+				}
+				
+				if (arrPredictedReward[itIdx] > 0) {
+					
+					int strategyForSimAndRewardFusion = 0; // strategy for fusion of similarity of stimulus and prototype and reward
+					
+					if (strategyForSimAndRewardFusion == 0) {
+						voteStrengthByAction[associatedActionOfUnit] += arrSim[itIdx];
+					}
+					else {
+						voteStrengthByAction[associatedActionOfUnit] += ( arrSim[itIdx] * (cast(double)arrPredictedReward[itIdx] + 0.01) );
+					}
+				}
+			}
+			
+			// search max
+			double maxVotingVal = -double.max;
+			string maxVotingActionCode = null;
+			foreach (itKey, itValue; voteStrengthByAction) {
+				if (voteStrengthByAction[itKey] > maxVotingVal) {
+					maxVotingVal = voteStrengthByAction[itKey];
+					maxVotingActionCode = itKey;
+				}
+			}
+			
+			return maxVotingActionCode;
+		}
 		
-		string maxVotingActionCode = calc__action__byVotingMax(column.ctx, arrSim);
+		string maxVotingActionCode = calc__action__byVotingMax(column.ctx, arrSim, arrPredictedReward);
+		
+		*/
+		
+		int nPlanningDepth = 1;
+		AlgorithmResult__Planning resPlanning = LAB__cortialAlgorithm__planning_A(perceivedStimulus, column, nPlanningDepth);
+		
+		string maxVotingActionCode = resPlanning.firstActionActionCode; // copy selected action code into temporary variable
+		
+		
+		
+		
 		
 		// DEBUG
-		writeln(format("selected maxVotingAction=%s", maxVotingActionCode));
+		writeln(format("selected max firstActionActionCode=%s    expected future rewardSum=%f", resPlanning.firstActionActionCode, resPlanning.expectedRewardSum));
 		
 		string selectedActionCode = null;
 		
@@ -400,7 +592,7 @@ class CortialAlgoithm_LearnerCtx {
 		
 		
 		
-		
+		/*
 		
 		double maxVal = -1.0;
 		long idxMax = -1;
@@ -413,17 +605,14 @@ class CortialAlgoithm_LearnerCtx {
 		
 		
 		writeln(format("similarityMaxVal=%f", maxVal));
-		
+		*/
 		
 		
 		// stage: reward winner unit and punish looser units
 		
 		// now we reward the winning unit and punish the loosing unit (only do this when the column is using attention)
 		{
-			// TODO TODO
-			// TODO TODO
-			// TODO TODO
-			
+			// TODO LOW			
 		}
 		
 		
@@ -969,7 +1158,7 @@ class SimpleCursor0Env : EnvAbstract {
 			// writeln( map_convToStr(imgScratchpad) );	 // DEBUG
 			
 			
-			wasLastActionChangeWrite = valBefore != 2; // we did change pixel color if values are different
+			wasLastActionChangeWrite = true; //valBefore != 2; // we did change pixel color if values are different
 		}
 	}
 	
@@ -1104,7 +1293,7 @@ void IDEA_LAB__drawingTaskSimpleA() {
 	
 	
 	// code which encodes the task
-	string[] taskCode = ["2"];
+	string[] taskCode = ["3"];
 	
 	
 	ImagePairsCtx imagePairs = new ImagePairsCtx();
@@ -1130,6 +1319,12 @@ void IDEA_LAB__drawingTaskSimpleA() {
 			imgRightside.writeAt(2, Vec2i(3, 1));
 		}
 		
+		if (taskCode[0] == "3") {
+			imgRightside.writeAt(2, Vec2i(2, 1));
+			imgRightside.writeAt(2, Vec2i(3, 1));
+			imgRightside.writeAt(2, Vec2i(4, 1));
+		}
+		
 		ImagePair createdImagePair = new ImagePair(imgLeftside, imgRightside);
 		imagePairs.imagePairs ~= createdImagePair;
 	}
@@ -1150,7 +1345,7 @@ void IDEA_LAB__drawingTaskSimpleA() {
 		
 	
 		
-		for (long itAttemptForPair=0; itAttemptForPair < 100; itAttemptForPair++) {
+		for (long itAttemptForPair=0; itAttemptForPair < 10000; itAttemptForPair++) {
 			
 			writeln(format("task:    itAttempt=%d", itAttemptForPair));
 			
@@ -1179,7 +1374,7 @@ void IDEA_LAB__drawingTaskSimpleA() {
 			
 			
 			
-			for (long cntIterationOfTaskAttempt=0; cntIterationOfTaskAttempt<5; cntIterationOfTaskAttempt++) {
+			for (long cntIterationOfTaskAttempt=0; cntIterationOfTaskAttempt<7; cntIterationOfTaskAttempt++) {
 				
 				writeln(format("task:       cntIterationOfTaskAttempt=%d", cntIterationOfTaskAttempt));
 				
@@ -1246,6 +1441,7 @@ void IDEA_LAB__drawingTaskSimpleA() {
 	
 	
 }
+
 
 
 
