@@ -571,7 +571,7 @@ class CortialAlgoithm_LearnerCtx {
 		
 		*/
 		
-		int nPlanningDepth = 1;
+		int nPlanningDepth = 2;
 		AlgorithmResult__Planning resPlanning = LAB__cortialAlgorithm__planning_A(perceivedStimulus, column, nPlanningDepth);
 		
 		string maxVotingActionCode = resPlanning.firstActionActionCode; // copy selected action code into temporary variable
@@ -1412,7 +1412,7 @@ void IDEA_LAB__drawingTaskSimpleA() {
 				
 				writeln("task: 100% match!");
 				
-				exit(0); // DEBUG
+				//exit(0); // DEBUG
 				
 				break; // we break out of the loop to learn from this image pair
 			}
