@@ -1,4 +1,3 @@
-// core idea: use a NAL-9 ish mechanism to control the AI and learn control
 
 // compile with
 //
