@@ -1169,7 +1169,7 @@ public static class LabA {
 			
 			
 			
-				for (long cntIterationOfTaskAttempt=0; cntIterationOfTaskAttempt<7; cntIterationOfTaskAttempt++) {
+				for (long cntIterationOfTaskAttempt=0; cntIterationOfTaskAttempt<5; cntIterationOfTaskAttempt++) {
 				
 					Console.WriteLine(string.Format("task:       cntIterationOfTaskAttempt={0}", cntIterationOfTaskAttempt));
 				
