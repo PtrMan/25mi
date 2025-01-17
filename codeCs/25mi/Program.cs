@@ -419,7 +419,7 @@ public class CortialAlgoithm_LearnerCtx {
 		// DEBUG
 		Console.WriteLine("");
 		Console.WriteLine("similarities to perceivedStimulus:");
-		Console.WriteLine(arrSim);
+		Console.WriteLine("   " + VecUtils.convToStr(new Vec(arrSim)));
 		
 		
 		
@@ -482,16 +482,26 @@ public class CortialAlgoithm_LearnerCtx {
 		*/
 		
 		int nPlanningDepth = 2;
-		AlgorithmResult__Planning resPlanning = CortialCore.LAB__cortialAlgorithm__planning_A(perceivedStimulus, column, nPlanningDepth);
+		int nPlanningAttempts = 10;
+
+		AlgorithmResult__Planning resBestPlanning = null; // best planning result with highest future reward
+		for(int itPlanningAttempt=0; itPlanningAttempt<nPlanningAttempts; itPlanningAttempt++) {
+			AlgorithmResult__Planning resPlanning = CortialCore.LAB__cortialAlgorithm__planning_A(perceivedStimulus, column, nPlanningDepth);
+			if (resBestPlanning == null || resPlanning.expectedRewardSum > resBestPlanning.expectedRewardSum) {
+				resBestPlanning = resPlanning;
+			}
+		}
+
+
 		
-		string maxVotingActionCode = resPlanning.firstActionActionCode; // copy selected action code into temporary variable
+		string maxVotingActionCode = resBestPlanning.firstActionActionCode; // copy selected action code into temporary variable
 		
 		
 		
 		
 		
 		// DEBUG
-		Console.WriteLine(string.Format("selected max firstActionActionCode={0}    expected future rewardSum={1}", resPlanning.firstActionActionCode, resPlanning.expectedRewardSum));
+		Console.WriteLine(string.Format("selected max firstActionActionCode={0}    expected future rewardSum={1}", resBestPlanning.firstActionActionCode, resBestPlanning.expectedRewardSum));
 		
 		string selectedActionCode = null;
 		
