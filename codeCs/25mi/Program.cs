@@ -165,6 +165,7 @@ public class AlgorithmResult__Planning {
 	public double expectedRewardSum = 0.0; // exptected reward sum for the selected action
 }
 
+
 // use of predicted input for 
 // mechanism:
 // a) feed input X to column to predict input X which follows, together with the action and reward
@@ -173,46 +174,74 @@ public class AlgorithmResult__Planning {
 // TODO IDEA: we could predict the next input and the reward with NN which are trained.
 
 public static class CortialCore {
-	public static AlgorithmResult__Planning LAB__cortialAlgorithm__planning_A(Vec stimulus, ColumnCtxA columnCtx, int nPlanningDepth) {
+	// /param nPlanningDepth  how many iterations are done for planning
+	public static AlgorithmResult__Planning LAB__cortialAlgorithm__planning_A(Vec stimulus, CortialAlgoithm_LearnerCtx learnerCtx, int nPlanningDepth) {
 
 
-
-		//int nPlanningDepth = 1; // how many iterations are done for planning
-		//int nPlanningDepth = 4; // how many iterations are done for planning
 	
 
 		Vec iteratedStimulus = stimulus;
 	
 		double expectedRewardSum = 0.0; // sum of rewards of the "path"
-		string firstActionActionCode = null;
-	
-		if (columnCtx.ctx.units.Count > 0) { // there must be units to vote on
-			for(int itPlanningDepth=0;itPlanningDepth<nPlanningDepth;itPlanningDepth++) {
-				// vote for best unit
-				VotingWeightsOfUnits votingWeights = iteratedPlanning__voteUnitsAsVotingWeights(iteratedStimulus, columnCtx);
-			
-				// select winner unit weights
-				VotingWeightsOfUnits votingWeightsAfterSelectingWinner = iteratedPlanning__selectWinnerUnitVector(votingWeights);
-			
-				if (itPlanningDepth == 0) {
-					firstActionActionCode = columnCtx.ctx.units[ calcIndexWithHighestValue(votingWeightsAfterSelectingWinner) ].actionCode;
-				}
-			
-				expectedRewardSum += (calcWeightedPredictedReward(votingWeightsAfterSelectingWinner.v, columnCtx) * Math.Exp(-(double)itPlanningDepth * 0.9));
-			
-				// compute prediction of predicted output by vector
-				Vec vecPredicted = computePredictedVector(votingWeightsAfterSelectingWinner, columnCtx);
-			
-				iteratedStimulus = vecPredicted; // feed as stimulus for next iteration
-			}
+		
+
+		// used to collect the votes for the first action code
+		Dictionary<string, int> firstActionActionCodeVotes = new Dictionary<string, int>();
+		// initialize to no votes
+		foreach (string itActionCode in learnerCtx.columns[0].availableActions) {
+			firstActionActionCodeVotes[itActionCode] = 0;
 		}
 	
+		
+		for(int itPlanningDepth=0;itPlanningDepth<nPlanningDepth;itPlanningDepth++) {
+
+			foreach (ColumnCtxA itColumn in learnerCtx.columns) {
+
+				// TODO : dataflow for prediction may need global  mapping mechanism to go from predictedOutput to global input which is used as virtual stimulus for feedback
+
+				if (itColumn.ctx.units.Count > 0) { // there must be units to vote on	
+			
+					// vote for best unit
+					VotingWeightsOfUnits votingWeights = iteratedPlanning__voteUnitsAsVotingWeights(iteratedStimulus, itColumn);
+			
+					// select winner unit weights
+					VotingWeightsOfUnits votingWeightsAfterSelectingWinner = iteratedPlanning__selectWinnerUnitVector(votingWeights);
+			
+					if (itPlanningDepth == 0) {
+						string selActionCode = itColumn.ctx.units[ calcIndexWithHighestValue(votingWeightsAfterSelectingWinner) ].actionCode;
+						firstActionActionCodeVotes[selActionCode] = firstActionActionCodeVotes[selActionCode] + 1; // upvote the action
+
+						//firstActionActionCode = itColumn.ctx.units[ calcIndexWithHighestValue(votingWeightsAfterSelectingWinner) ].actionCode;
+					}
+			
+					expectedRewardSum += (calcWeightedPredictedReward(votingWeightsAfterSelectingWinner.v, itColumn) * Math.Exp(-(double)itPlanningDepth * 0.9));
+			
+					// compute prediction of predicted output by vector
+					Vec vecPredicted = computePredictedVector(votingWeightsAfterSelectingWinner, itColumn);
+			
+					iteratedStimulus = vecPredicted; // feed as stimulus for next iteration
+				}
+			}
+
+		}
+		
+
+		string firstActionActionCode = null;
+		int votesMax = -1;
+		foreach (KeyValuePair<string, int> itKeyValue in firstActionActionCodeVotes) {
+			if (itKeyValue.Value > votesMax) {
+				firstActionActionCode = itKeyValue.Key;
+				votesMax = itKeyValue.Value;
+			}
+		}
 	
 		// now we have a action "firstActionActionCode" which leads to a possible path with expected reward = "expectedRewardSum"
 	
 		// we have to do this a few times and select the action which gives us the highest expected reward
-	
-		// TODO : implement outer loop
+		// this is implemented in a outer loop
+
+		// TODO conceptual : how do we compute the "expectedRewardSum" with the new multi-column voting scheme?
+		//                   we haven't implemented this yet! so it only works correctly for the case with a single column!
 	
 		AlgorithmResult__Planning res = new AlgorithmResult__Planning();
 		res.firstActionActionCode = firstActionActionCode;
@@ -344,7 +373,7 @@ learner is based on following ideas:
 
 // context of the cortial algorithm - learning and inference and interaction with the environment
 public class CortialAlgoithm_LearnerCtx {
-	public ColumnCtxA column = new ColumnCtxA();
+	public ColumnCtxA[] columns = null; // columns similar to cortial columns
 	
 	
 	// reward statistics
@@ -362,13 +391,19 @@ public class CortialAlgoithm_LearnerCtx {
 	
 	public EnvAbstract env = null; // must be set externally
 	
-	
+	public void allocateColumns(int nColumns) {
+		columns = new ColumnCtxA[nColumns];
+		for(int idx=0;idx<columns.Length;idx++) {
+			columns[idx] = new ColumnCtxA();
+		}
+	}
 	
 	public void resetColumnStates() {
-		
-		column.lastPerceivedStimulus = null;
-		column.lastSelectedAction = null;
-	
+
+		for (int idx=0;idx<columns.Length;idx++) {
+			columns[idx].lastPerceivedStimulus = null;
+			columns[idx].lastSelectedAction = null;
+		}
 	}
 	
 	
@@ -381,12 +416,14 @@ public class CortialAlgoithm_LearnerCtx {
 		
 		// DEBUG units
 		{
-			Console.WriteLine("units:");
-			foreach (UnitB itUnit in column.ctx.units) {
+			foreach (ColumnCtxA itColumn in columns) {
+				Console.WriteLine("units:");
+				foreach (UnitB itUnit in itColumn.ctx.units) {
+					Console.WriteLine("");
+					Console.WriteLine(UnitUtils.retDebugStrOfUnit(itUnit));
+				}
 				Console.WriteLine("");
-				Console.WriteLine(UnitUtils.retDebugStrOfUnit(itUnit));
 			}
-			Console.WriteLine("");
 		}
 		
 		
@@ -399,9 +436,10 @@ public class CortialAlgoithm_LearnerCtx {
 		Console.WriteLine(string.Format("perceived stimulus= {0}", perceivedStimulus.arr));
 		
 		
-		
-		// build contigency from past observation, past action and current stimulus and update in memory
-		buildContingencyFromPastObservation(perceivedStimulus);
+		foreach (ColumnCtxA itColumn in columns) {
+			// build contigency from past observation, past action and current stimulus and update in memory
+			buildContingencyFromPastObservation(perceivedStimulus, itColumn);
+		}
 		
 		
 		
@@ -410,7 +448,7 @@ public class CortialAlgoithm_LearnerCtx {
 		// use calc__action__byVotingMax to decide on the next action based on the observed stimulus state . then update the associations based on the observed effect state
 		
 		
-		
+		/*
 		SimilarityCalculationStrategy similarityCalcStrategy;
 		similarityCalcStrategy = new SoftMaxSimilarityCalculationStrategy();
 		//similarityCalcStrategy = new SoftMaxSimilarityAttentionCalculationStrategy(); // use attention strategy
@@ -420,7 +458,7 @@ public class CortialAlgoithm_LearnerCtx {
 		Console.WriteLine("");
 		Console.WriteLine("similarities to perceivedStimulus:");
 		Console.WriteLine("   " + VecUtils.convToStr(new Vec(arrSim)));
-		
+		*/
 		
 		
 		
@@ -486,7 +524,7 @@ public class CortialAlgoithm_LearnerCtx {
 
 		AlgorithmResult__Planning resBestPlanning = null; // best planning result with highest future reward
 		for(int itPlanningAttempt=0; itPlanningAttempt<nPlanningAttempts; itPlanningAttempt++) {
-			AlgorithmResult__Planning resPlanning = CortialCore.LAB__cortialAlgorithm__planning_A(perceivedStimulus, column, nPlanningDepth);
+			AlgorithmResult__Planning resPlanning = CortialCore.LAB__cortialAlgorithm__planning_A(perceivedStimulus, this, nPlanningDepth);
 			if (resBestPlanning == null || resPlanning.expectedRewardSum > resBestPlanning.expectedRewardSum) {
 				resBestPlanning = resPlanning;
 			}
@@ -568,8 +606,8 @@ public class CortialAlgoithm_LearnerCtx {
 		// select random action 
 		bool enSelRandomActionThisStep = maxVotingActionCode is null || rng.nextReal() < paramRandomActionChance; // do we select a random action at this step?
 		if (enSelRandomActionThisStep) {
-			int idxSel = (int)rng.nextInteger(column.availableActions.Count);
-			selectedActionCode = column.availableActions[idxSel];
+			int idxSel = (int)rng.nextInteger(columns[0].availableActions.Count);
+			selectedActionCode = columns[0].availableActions[idxSel];
 			Console.WriteLine("DBG  random action is selected");
 		}
 		
@@ -586,31 +624,34 @@ public class CortialAlgoithm_LearnerCtx {
 		
 		// stage: receive reward from environment
 		{
-			// NOTE that 0 is no reward signal
-			column.lastRewardFromEnvironment = env.retRewardFromLastAction();
+			foreach (ColumnCtxA itColumn in columns) {
+				// NOTE that 0 is no reward signal
+				itColumn.lastRewardFromEnvironment = env.retRewardFromLastAction();
 			
-			if (column.lastRewardFromEnvironment < 0) {
-				cntRewardNeg+=1;
-			}
-			else if (column.lastRewardFromEnvironment > 0) {
-				cntRewardPos+=1;
-			}
+				if (itColumn.lastRewardFromEnvironment < 0) {
+					cntRewardNeg+=1;
+				}
+				else if (itColumn.lastRewardFromEnvironment > 0) {
+					cntRewardPos+=1;
+				}
 			
-			if (column.lastRewardFromEnvironment < 0) {
-				Console.WriteLine("column: received - NEGATIVE reward!");
+				if (itColumn.lastRewardFromEnvironment < 0) {
+					Console.WriteLine("column: received - NEGATIVE reward!");
+				}
+				else if (itColumn.lastRewardFromEnvironment > 0) {
+					Console.WriteLine("column: received + POSITIVE reward!");
+				}
+
+				// TODO : use reward before next cycle to reward/punish units
 			}
-			else if (column.lastRewardFromEnvironment > 0) {
-				Console.WriteLine("column: received + POSITIVE reward!");
-			}
-			
-			// TODO : use reward before next cycle to reward/punish units
 		}
 		
 		
 		// stage: prepare next cycle
-		column.lastSelectedAction = selectedActionCode;
-		column.lastPerceivedStimulus = perceivedStimulus;
-		
+		foreach (ColumnCtxA itColumn in columns) {
+			itColumn.lastSelectedAction = selectedActionCode;
+			itColumn.lastPerceivedStimulus = perceivedStimulus;
+		}
 		
 		
 		
@@ -631,9 +672,10 @@ public class CortialAlgoithm_LearnerCtx {
 		Console.WriteLine(string.Format("perceived stimulus= {0}", VecUtils.convToStr(perceivedStimulus)));
 		
 		
-		
-		// build contigency from past observation, past action and current stimulus and update in memory
-		buildContingencyFromPastObservation(perceivedStimulus);
+		foreach (ColumnCtxA itColumn in columns) {
+			// build contigency from past observation, past action and current stimulus and update in memory
+			buildContingencyFromPastObservation(perceivedStimulus, itColumn);
+		}
 	}
 	
 	
@@ -645,7 +687,7 @@ public class CortialAlgoithm_LearnerCtx {
 	//
 	// build contigency from past observation, past action and current stimulus and update in memory
 	//
-	public void buildContingencyFromPastObservation(Vec perceivedStimulus) {
+	public void buildContingencyFromPastObservation(Vec perceivedStimulus, ColumnCtxA column) {
 		// NOTE : we only update if it is similar enough to existing condition
 		
 		if (!(column.lastPerceivedStimulus is null)) {
@@ -731,10 +773,10 @@ public static class ManualtestsA {
 	
 	
 	
-		learner.column.availableActions = new List<string>();
-		learner.column.availableActions.Add("^a");
-		learner.column.availableActions.Add("^b");
-		learner.column.availableActions.Add("^c");
+		learner.columns[0].availableActions = new List<string>();
+		learner.columns[0].availableActions.Add("^a");
+		learner.columns[0].availableActions.Add("^b");
+		learner.columns[0].availableActions.Add("^c");
 	
 	
 		learner.resetColumnStates();
@@ -1077,14 +1119,15 @@ public static class LabA {
 	
 		learner.env = new SimpleCursor0Env(); // we set the environment to simple cursor for ARC environment
 	
-	
-	
-		learner.column.availableActions = new List<string>();
-		//learner.column.availableActions ~= "^move(-1, 0)";
-		learner.column.availableActions.Add("^move(1, 0)");
-		//learner.column.availableActions ~= "^move(0, -1)";
-		//learner.column.availableActions ~= "^move(0, 1)";
-		learner.column.availableActions.Add("^draw(2)");
+		int nColumns = 1;
+		learner.allocateColumns(nColumns);
+		
+		learner.columns[0].availableActions = new List<string>();
+		//learner.columns[0].availableActions ~= "^move(-1, 0)";
+		learner.columns[0].availableActions.Add("^move(1, 0)");
+		//learner.columns[0].availableActions ~= "^move(0, -1)";
+		//learner.columns[0].availableActions ~= "^move(0, 1)";
+		learner.columns[0].availableActions.Add("^draw(2)");
 	
 	
 		// code which encodes the task
@@ -1536,4 +1579,6 @@ public static class RngUtils {
 
 
 
+
+// TODO  :  put actions for decision making into global context of learner!
 
