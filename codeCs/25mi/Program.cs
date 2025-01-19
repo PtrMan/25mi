@@ -178,12 +178,9 @@ public class AlgorithmResult__Planning {
 public static class CortialCore {
 	// /param nPlanningDepth  how many iterations are done for planning
 	public static AlgorithmResult__Planning LAB__cortialAlgorithm__planning_A(Vec stimulus, CortialAlgoithm_LearnerCtx learnerCtx, int nPlanningDepth) {
-
-
-	
-
+		
 		Vec iteratedStimulus = stimulus;
-	
+		
 		double expectedRewardSum = 0.0; // sum of rewards of the "path"
 		string selFirstActionCode = null;
 
@@ -198,7 +195,7 @@ public static class CortialCore {
 			{
 				if (learnerCtx.predictiveNn.ctx.units.Count > 0) { // we can only do this if there are units to vote on
 
-					foreach (String itActionCode in  learnerCtx.columns[0].availableActions) {
+					foreach (string itActionCode in  learnerCtx.columns[0].availableActions) {
 						Tuple<Vec, double> resPredictiveNn = learnerCtx.predictiveNn.calcNextObservationStateAndRewardGivenObservationAndAction(iteratedStimulus, itActionCode);
 						if (resPredictiveNn.Item2 > highestFutureRewardFromPredictiveNn) {
 							highestFutureRewardFromPredictiveNn = resPredictiveNn.Item2;
@@ -279,7 +276,7 @@ public static class CortialCore {
 			//
 			// here we randomly sample the action
 			string selActionCode = null;
-			double configSelStrategyProb = 0.05; // select by column or by predictive NN
+			double configSelStrategyProb = 0.70; // select by column or by predictive NN
 			// random variable 0.5 doesnt work :( yet
 			if (learnerCtx.rng.nextReal() < configSelStrategyProb) {
 				selActionCode = columnVoteActionCode;
@@ -541,7 +538,7 @@ public class PredictiveNn {
 			}
 		}
 
-		votingOfUnits = new VotingWeightsOfUnits( VecUtils.normalize( votingOfUnits.v ) ); // need to normalize it for correct weighting
+		votingOfUnits = new VotingWeightsOfUnits( VecUtils.normalizeL1( votingOfUnits.v ) ); // need to normalize it for correct weighting
 
 		// now we just need to extrapolate the predicted next state
 		Vec predictedNextState = CortialCore.computePredictedVector(votingOfUnits, ctx);
@@ -644,7 +641,7 @@ public class CortialAlgoithm_LearnerCtx {
 		
 		perceivedStimulus = env.receivePerception();
 		
-		Console.WriteLine(string.Format("perceived stimulus= {0}", perceivedStimulus.arr));
+		Console.WriteLine(string.Format("perceived stimulus= {0}", VecUtils.convToStr(perceivedStimulus)));
 		
 		
 		foreach (ColumnCtxA itColumn in columns) {
@@ -658,36 +655,10 @@ public class CortialAlgoithm_LearnerCtx {
 		
 		
 		
-		// STAGE: compare stimulus to prototypes and compute for each unit: similarity of stimulus to compared patttern of unit
-		
-		// use calc__action__byVotingMax to decide on the next action based on the observed stimulus state . then update the associations based on the observed effect state
-		
-		
-		/*
-		SimilarityCalculationStrategy similarityCalcStrategy;
-		similarityCalcStrategy = new SoftMaxSimilarityCalculationStrategy();
-		//similarityCalcStrategy = new SoftMaxSimilarityAttentionCalculationStrategy(); // use attention strategy
-		double[] arrSim = similarityCalcStrategy.calcMatchingScore__by__stimulus(perceivedStimulus, column.ctx);
-		
-		// DEBUG
-		Console.WriteLine("");
-		Console.WriteLine("similarities to perceivedStimulus:");
-		Console.WriteLine("   " + VecUtils.convToStr(new Vec(arrSim)));
-		*/
-		
+
 		
 		
 		/* commented because DEPRECTAED because new functionality can do this much better!
-		
-		// we need to mask units which learned negative reward so that we don't pick actions which lead to negative reward
-		double[] arrPredictedReward = [];
-		for (long itIdx=0; itIdx<arrSim.length; itIdx++) {
-			//if (column.ctx.units[itIdx].predictedReward < 0) { // check if is enough negative reward
-				//arrSim[itIdx] = 0.0; // mask similarity so it wont get selected as next action
-				arrPredictedReward ~= column.ctx.units[itIdx].predictedReward;
-			//}
-		}
-		
 		
 		
 
@@ -765,20 +736,7 @@ public class CortialAlgoithm_LearnerCtx {
 		
 		
 		
-		/*
 		
-		double maxVal = -1.0;
-		long idxMax = -1;
-		foreach (itIdx, itVal; arrSim) {
-			if (itVal > maxVal) {
-				maxVal = itVal;
-				idxMax = itIdx;
-			}
-		}
-		
-		
-		writeln(format("similarityMaxVal=%f", maxVal));
-		*/
 		
 		
 		// stage: reward winner unit and punish looser units
@@ -1179,6 +1137,14 @@ public class SimpleCursor0Env : EnvAbstract {
 		// cut out the view of "imgScratchpad"
 		Map2d imgSub = Map2dUtils.map_submap(Vec2iUtils.sub(posCursorCenter, new Vec2i((windowExtend-1)/2, (windowExtend-1)/2)), new Vec2i(windowExtend, windowExtend), imgScratchpad);
 		
+
+		bool enDebugPerceptionImg = true;
+		if (enDebugPerceptionImg) {
+			Console.WriteLine("");
+			Console.WriteLine( Map2dUtils.map_convToStr(imgSub) );
+		}
+
+
 		Vec perceivedStimulus = Map2dUtils.conv_map2d_to_arrOneHot(imgSub, 12);
 		
 		return perceivedStimulus; // return perceivedStimulus as output from the environment
@@ -1348,11 +1314,12 @@ public static class LabA {
 		learner.columns[0].availableActions.Add("^move(1, 0)");
 		//learner.columns[0].availableActions ~= "^move(0, -1)";
 		//learner.columns[0].availableActions ~= "^move(0, 1)";
+		
 		learner.columns[0].availableActions.Add("^draw(2)");
 	
 	
 		// code which encodes the task
-		string[] taskCode = new string[]{"1"};
+		string[] taskCode = new string[]{"2"};
 	
 	
 		ImagePairsCtx imagePairs = new ImagePairsCtx();
@@ -1481,8 +1448,8 @@ public static class LabA {
 		
 			// process processLearnDrawA END
 		}
-	
-	
+		
+		
 		// * now we check if the task is solvable with the learned model
 		//   
 		//   algorithm: we simply iterate over all pairs and see if the learner can successfully solve it in inference mode
@@ -1736,10 +1703,22 @@ public static class VecUtils {
 		return VecUtils.scale(v, 1.0/l);
 	}
 
+	// make it to sum to 1.0
+	public static Vec normalizeL1(Vec v) {
+		double l = 0.0;
+		foreach (double iv in v.arr) {
+			l += iv;
+		}
+
+		return VecUtils.scale(v, 1.0/l);
+	}
+
 
 	public static double calcL2Norm(Vec arg) {
 		return Math.Sqrt(calcDot(arg, arg));
 	}
+
+
 
 	public static int calcHighestValueIdx(Vec arg) {
 		int highestIdx = 0;
