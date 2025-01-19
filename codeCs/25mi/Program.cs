@@ -217,13 +217,19 @@ public static class CortialCore {
 
 			
 			// used to collect the votes for the actionCode from all columns, given "iteratedStimulus"
-			Dictionary<string, int> actionCodeVotes = new Dictionary<string, int>();
+			Dictionary<string, double> actionCodeVotes = new Dictionary<string, double>();
 			// initialize to no votes
 			foreach (string itActionCode in learnerCtx.columns[0].availableActions) {
-				actionCodeVotes[itActionCode] = 0;
+				actionCodeVotes[itActionCode] = 0.0;
 			}
 
-			double expectedRewardFromColumnVotes = 0.0;
+			Dictionary<string, double> expectedRewardFromColumnVotesByAction = new Dictionary<string, double>();
+			// initialize to no votes
+			foreach (string itActionCode in learnerCtx.columns[0].availableActions) {
+				expectedRewardFromColumnVotesByAction[itActionCode] = 0;
+			}
+
+			//double expectedRewardFromColumnVotes = 0.0;
 
 			foreach (ColumnCtxA itColumn in learnerCtx.columns) {
 
@@ -243,9 +249,11 @@ public static class CortialCore {
 						actionCodeVotes[selActionCodeFromColumn] = actionCodeVotes[selActionCodeFromColumn] + 1; // upvote the action
 
 						//firstActionActionCode = itColumn.ctx.units[ calcIndexWithHighestValue(votingWeightsAfterSelectingWinner) ].actionCode;
+
+						expectedRewardFromColumnVotesByAction[selActionCodeFromColumn] += calcWeightedPredictedReward(votingWeightsAfterSelectingWinner.v, itColumn.ctx);
 					}
 					
-					expectedRewardFromColumnVotes += (calcWeightedPredictedReward(votingWeightsAfterSelectingWinner.v, itColumn.ctx) * Math.Exp(-(double)itPlanningDepth * 0.9));
+					//expectedRewardFromColumnVotes += (calcWeightedPredictedReward(votingWeightsAfterSelectingWinner.v, itColumn.ctx) * Math.Exp(-(double)itPlanningDepth * 0.9));
 					
 					// compute prediction of predicted output by vector
 					//Vec vecPredicted = computePredictedVector(votingWeightsAfterSelectingWinner, itColumn.ctx);
@@ -257,8 +265,8 @@ public static class CortialCore {
 			// vote on action decided by all columns
 			string columnVoteActionCode = null;
 			{				
-				int votesMax = -1;
-				foreach (KeyValuePair<string, int> itKeyValue in actionCodeVotes) {
+				double votesMax = -double.MaxValue;
+				foreach (KeyValuePair<string, double> itKeyValue in actionCodeVotes) {
 					if (itKeyValue.Value > votesMax) {
 						columnVoteActionCode = itKeyValue.Key;
 						votesMax = itKeyValue.Value;
@@ -271,14 +279,16 @@ public static class CortialCore {
 			//
 			// here we randomly sample the action
 			string selActionCode = null;
+			double configSelStrategyProb = 0.05; // select by column or by predictive NN
 			// random variable 0.5 doesnt work :( yet
-			if (learnerCtx.rng.nextReal() < 0.0) {
+			if (learnerCtx.rng.nextReal() < configSelStrategyProb) {
 				selActionCode = columnVoteActionCode;
-				expectedRewardSum += expectedRewardFromColumnVotes;
+
+				expectedRewardSum += expectedRewardFromColumnVotesByAction[columnVoteActionCode] * Math.Exp(-(double)itPlanningDepth * 0.9); // better
 			}
 			else {
 				selActionCode = selActionCodeFromPredictiveNn;
-				expectedRewardSum += highestFutureRewardFromPredictiveNn;
+				expectedRewardSum += highestFutureRewardFromPredictiveNn * Math.Exp(-(double)itPlanningDepth * 0.9);
 			}
 
 			// we only care about selecting the first action in the sequence for decision making
@@ -1460,7 +1470,7 @@ public static class LabA {
 					// this means that we did learn the task from the image-pair successfully
 				
 					Console.WriteLine("task: 100% match!");
-				
+					
 					//exit(0); // DEBUG
 					
 					break; // we break out of the loop to learn from this image pair
