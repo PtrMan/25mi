@@ -1,10 +1,4 @@
 ﻿
-
-// See https://aka.ms/new-console-template for more information
-//Console.WriteLine("Hello, World!");
-
-using System.Data.Common;
-
 EntryA.entryA();
 
 
@@ -582,7 +576,7 @@ public class CortialAlgoithm_LearnerCtx {
 	public long cntRewardNeg = 0;
 	
 	
-	public double paramRandomActionChance = 0.1; // probability to act with a random action in each timestep
+	public double paramRandomActionChance = 0.05; // probability to act with a random action in each timestep
 	
 	public double paramGoodEnoughSimThreshold = 0.95;
 	
@@ -597,7 +591,7 @@ public class CortialAlgoithm_LearnerCtx {
 	
 	public EnvAbstract env = null; // must be set externally
 	
-
+	public int verbosity = 0;
 
 	public void allocateColumns(int nColumns) {
 		columns = new ColumnCtxA[nColumns];
@@ -618,12 +612,18 @@ public class CortialAlgoithm_LearnerCtx {
 	// synchronous step between learner and environment
 	public void learnerSyncronousAndEnviromentStep(long globalIterationCounter) {
 		
-		Console.WriteLine("");
-		Console.WriteLine("");
-		Console.WriteLine("");
+		
+		
+
+
+		if (verbosity >= 1) {
+			Console.WriteLine("");
+			Console.WriteLine("");
+			Console.WriteLine("");
+		}
 		
 		// DEBUG units
-		{
+		if (verbosity >= 10) {
 			foreach (ColumnCtxA itColumn in columns) {
 				Console.WriteLine("units:");
 				foreach (UnitB itUnit in itColumn.ctx.units) {
@@ -641,7 +641,10 @@ public class CortialAlgoithm_LearnerCtx {
 		
 		perceivedStimulus = env.receivePerception();
 		
-		Console.WriteLine(string.Format("perceived stimulus= {0}", VecUtils.convToStr(perceivedStimulus)));
+
+		if (verbosity >= 2) {
+			Console.WriteLine(string.Format("perceived stimulus= {0}", VecUtils.convToStr(perceivedStimulus)));
+		}
 		
 		
 		foreach (ColumnCtxA itColumn in columns) {
@@ -705,7 +708,7 @@ public class CortialAlgoithm_LearnerCtx {
 		
 		*/
 		
-		int nPlanningDepth = 2;
+		int nPlanningDepth = 5;
 		int nPlanningAttempts = 10;
 
 		AlgorithmResult__Planning resBestPlanning = null; // best planning result with highest future reward
@@ -855,6 +858,10 @@ public class CortialAlgoithm_LearnerCtx {
 			// build contigency from past observation, past action and current stimulus and update in memory
 			buildContingencyFromPastObservation(perceivedStimulus, itColumn);
 		}
+
+		{
+			predictiveNn.learn(lastPerceivedStimulus, perceivedStimulus, lastSelectedActionCode, lastReward);
+		}
 	}
 	
 	
@@ -877,10 +884,12 @@ public class CortialAlgoithm_LearnerCtx {
 			SimilarityCalculationStrategy similarityCalcStrategy = new SoftMaxSimilarityCalculationStrategy();
 			double[] arrSim = similarityCalcStrategy.calcMatchingScore__by__stimulus(column.lastPerceivedStimulus, column.ctx);
 			
-			// DEBUG
-			Console.WriteLine("");
-			Console.WriteLine("sim to perceived contigency:");
-			Console.WriteLine(VecUtils.convToStr(new Vec(arrSim)));
+			if (verbosity >= 10) {
+				// DEBUG
+				Console.WriteLine("");
+				Console.WriteLine("sim to perceived contigency:");
+				Console.WriteLine(VecUtils.convToStr(new Vec(arrSim)));
+			}
 			
 			
 			
@@ -1147,6 +1156,10 @@ public class SimpleCursor0Env : EnvAbstract {
 
 		Vec perceivedStimulus = Map2dUtils.conv_map2d_to_arrOneHot(imgSub, 12);
 		
+		// for DEBUGGING
+		// we return only the x position as one hot
+		//perceivedStimulus = VecUtils.oneHotEncode((int)posCursorCenter.x, 5);
+
 		return perceivedStimulus; // return perceivedStimulus as output from the environment
 	}
 	
@@ -1177,7 +1190,7 @@ public class SimpleCursor0Env : EnvAbstract {
 			// writeln( map_convToStr(imgScratchpad) );	 // DEBUG
 			
 			
-			wasLastActionChangeWrite = true; //valBefore != 2; // we did change pixel color if values are different
+			wasLastActionChangeWrite = valBefore != 2; // we did change pixel color if values are different
 		}
 	}
 	
@@ -1763,7 +1776,10 @@ public class RngA {
     }
 	
 	public long nextInteger(long max) {
-		return (long)(nextReal() * max);
+		double rngReal = nextReal();
+		long v = (long)(rngReal * max * 1000) % max;
+
+		return v;
 	}
 }
 
