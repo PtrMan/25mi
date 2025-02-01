@@ -8,8 +8,18 @@ public static class EntryA {
 	}
 }
 
+// pattern together with attention mask and usage counters
+public class UnitPattern {
+	public UnitEvidence patternEvidence = new UnitEvidence();
+	
+	public Vec attentionMask; // attention mask for which this unit is looking out for
 
+	public string guid; // unique id which identifies this pattern
 
+	public UnitPattern(string guid) {
+		this.guid = guid;
+	}
+}
 
 // basic idea: 
 // we have units
@@ -21,7 +31,7 @@ public class UnitB {
 	
 	public string guid; // unique id which identifies this unit
 	
-	public UnitEvidence unitEvidence = new UnitEvidence();
+	//public UnitEvidence unitEvidence = new UnitEvidence();
 	
 	
 	// attribute for stimuli + action mapping
@@ -30,12 +40,14 @@ public class UnitB {
 	public int predictedReward = 0; // predicted reward which is associated with the consequence after the action
 	
 	
-	public Vec attentionMask; // attention mask for which this unit is looking out for
+	//public Vec attentionMask; // attention mask for which this unit is looking out for
 	
 	
 	public UnitB(string guid) {
 		this.guid = guid;
 	}
+
+	public List<UnitPattern> patterns = new List<UnitPattern>();
 }
 
 public static class UnitUtils {
@@ -54,6 +66,18 @@ public class UnitEvidence {
 	}
 }
 
+public static class LearnerUtils {
+	public static Vec extractSim(UnitPatternSim[] arrUnitPatternSims) {
+		// extract only similarity values
+		double[] arrSim = new double[arrUnitPatternSims.Length];
+		{
+			for(int idx=0; idx<arrUnitPatternSims.Length; idx++) {
+				arrSim[idx] = arrUnitPatternSims[idx].sim;
+			}
+		}
+		return  new Vec(arrSim);
+	}
+}
 
 // context which contains units
 public class CtxZZZ {
@@ -64,9 +88,12 @@ public class ZZZx {
 	// context we are using
 	public CtxZZZ ctx = new CtxZZZ();
 
+	/*
 	public void identifyAndLearn(Vec v) {
 		double bestSim = -1.0;
 		UnitB bestUnit = null;
+
+		UnitPattern bestUnitPattern = null;
 		
 		foreach (UnitB itUnit in ctx.units) {
 			double sim = VecUtils.calcCosineSim(v, itUnit.v);
@@ -78,8 +105,8 @@ public class ZZZx {
 		
 		double thresholdSim = 0.85;
 		if (bestSim > thresholdSim) {
-			// reward winner unit
-			bestUnit.unitEvidence.addPositive();
+			// reward winner pattern
+			bestUnitPattern.patternEvidence.addPositive();
 		}
 		else {
 			// we add a new unit
@@ -87,13 +114,13 @@ public class ZZZx {
 			UnitB createdUnit = new UnitB("");
 			
 			// reward created unit
-			createdUnit.unitEvidence.addPositive();
+			//createdUnit.unitEvidence.addPositive();
 			
 			
 			ctx.units.Add(createdUnit);
 			// TODO : care about AIKR here
 		}
-	}
+	}*/
 }
 
 
@@ -107,26 +134,12 @@ public class ZZZx {
 
 // strategy to calculate similarity
 public abstract class SimilarityCalculationStrategy {
-	public abstract double[] calcMatchingScore__by__stimulus(Vec stimulus, CtxZZZ ctx);
+	public abstract UnitPatternSim[] calcMatchingScore__by__stimulus(Vec stimulus, CtxZZZ ctx);
 }
 
-// soft computing similarity
-public class SoftMaxSimilarityCalculationStrategy : SimilarityCalculationStrategy {
-	public override double[] calcMatchingScore__by__stimulus(Vec stimulus, CtxZZZ ctx) {
-		double[] arrSim = new double[ctx.units.Count];
-		
-		int idx=0;
-		foreach (UnitB itUnit in ctx.units) {
-			double sim = VecUtils.calcCosineSim(stimulus, itUnit.v);
-			double sim2 = (sim+1.0) * 0.5; // map to 0.0 1.0 range
-			arrSim[idx] = sim2;
-			idx++;
-		}
-		
-		return arrSim;
-	}
-}
 
+
+/* commented because not up to date and not used
 // hard similarity
 public class HardMaxSimilarityCalculationStrategy : SimilarityCalculationStrategy {
 	public override double[] calcMatchingScore__by__stimulus(Vec stimulus, CtxZZZ ctx) {
@@ -149,7 +162,7 @@ public class HardMaxSimilarityCalculationStrategy : SimilarityCalculationStrateg
 		return arrSim;
 	}
 }
-
+*/
 
 
 
@@ -315,11 +328,13 @@ public static class CortialCore {
 	public static VotingWeightsOfUnits iteratedPlanning__voteUnitsAsVotingWeights(Vec stimulus, ColumnCtxA columnCtx) {
 	
 		SimilarityCalculationStrategy similarityCalcStrategy;
-		similarityCalcStrategy = new SoftMaxSimilarityCalculationStrategy();
+		similarityCalcStrategy = new SoftMaxSimilarityAttentionCalculationStrategy();
 		//similarityCalcStrategy = new SoftMaxSimilarityAttentionCalculationStrategy(); // use attention strategy
-		double[] arrSim = similarityCalcStrategy.calcMatchingScore__by__stimulus(stimulus, columnCtx.ctx);
-	
-		return new VotingWeightsOfUnits( VecUtils.normalize( new Vec(arrSim) ) );
+		UnitPatternSim[] arrUnitPatternSims = similarityCalcStrategy.calcMatchingScore__by__stimulus(stimulus, columnCtx.ctx);
+
+		Vec vecSim = LearnerUtils.extractSim(arrUnitPatternSims); // extract only similarity values
+
+		return new VotingWeightsOfUnits( VecUtils.normalize(vecSim) );
 	}
 
 
@@ -421,8 +436,31 @@ public class ColumnCtxA {
 
 
 
+// helpers for common functionality to create units, etc.
+public static class UnitPatternUtils {
+	// /param v vector to detect by the unit
+	public static UnitB makeUnitByStimulus(Vec v, string actionCode, Vec consequenceVec, int predictedReward) {
+		
+        // we add a new unit
+		UnitB createdUnit = new UnitB(Guid.NewGuid().ToString());
+		createdUnit.v = v;
 
+		UnitPattern createdUnitPattern = new UnitPattern(Guid.NewGuid().ToString());
+		createdUnitPattern.attentionMask = VecUtils.vecMake(1.0, createdUnit.v.arr.Length); // attention mask which doesn't change any channels by default (to make testing easier)                
+		createdUnit.patterns.Add(createdUnitPattern);
+				
+		createdUnit.actionCode = actionCode;
+		createdUnit.consequenceVec = consequenceVec;
+				
+		createdUnit.predictedReward = predictedReward; // attach reward to be able to predict reward
+                                                                        // TODO LOW : revise predictedReward via some clever formula when a good enough unit was found
 
+        // reward created pattern
+		createdUnitPattern.patternEvidence.addPositive();
+
+		return createdUnit;
+	}
+}
 
 
 
@@ -444,8 +482,8 @@ public class PredictiveNn {
 			bool wasMatchFound = false;
 			
 			// search for match
-			SimilarityCalculationStrategy similarityCalcStrategy = new SoftMaxSimilarityCalculationStrategy();
-            double[] arrSim = similarityCalcStrategy.calcMatchingScore__by__stimulus(lastPerceivedStimulus, ctx);
+			SimilarityCalculationStrategy similarityCalcStrategy = new SoftMaxSimilarityAttentionCalculationStrategy();
+            UnitPatternSim[] arrUnitPatternSims = similarityCalcStrategy.calcMatchingScore__by__stimulus(lastPerceivedStimulus, ctx);
 
             // DEBUG
             //Console.WriteLine("");
@@ -458,11 +496,11 @@ public class PredictiveNn {
 			{
 				int idxBest = -1;
 				double valBest = -2.0;
-                for (int itIdx=0; itIdx<arrSim.Length; itIdx++) {
+                for (int itIdx=0; itIdx<arrUnitPatternSims.Length; itIdx++) {
                     if (actionCode == ctx.units[itIdx].actionCode) { // action must be the same to count as the same
-                        if (arrSim[itIdx] > valBest) {
+                        if (arrUnitPatternSims[itIdx].sim > valBest) {
                             idxBest = itIdx;
-							valBest = arrSim[itIdx];
+							valBest = arrUnitPatternSims[itIdx].sim;
 						}
 					}
 				}
@@ -480,21 +518,10 @@ public class PredictiveNn {
 			}
 			
 			if (!wasMatchFound) {
+
                 // we add a new unit if no match was found
 
-                // we add a new unit
-				UnitB createdUnit = new UnitB(Guid.NewGuid().ToString());
-				createdUnit.v = lastPerceivedStimulus;
-				createdUnit.attentionMask = VecUtils.vecMake(1.0, createdUnit.v.arr.Length); // attention mask which doesn't change any channels by default (to make testing easier)
-                createdUnit.actionCode = actionCode;
-				createdUnit.consequenceVec = consequenceVec;
-				
-				createdUnit.predictedReward = predictedReward; // attach reward to be able to predict reward
-                                                                                // TODO LOW : revise predictedReward via some clever formula when a good enough unit was found
-
-                // reward created unit
-				createdUnit.unitEvidence.addPositive();
-				
+				UnitB createdUnit = UnitPatternUtils.makeUnitByStimulus(lastPerceivedStimulus, actionCode, consequenceVec, predictedReward);
 				
 				ctx.units.Add(createdUnit);
 				// TODO : care about AIKR here
@@ -512,15 +539,17 @@ public class PredictiveNn {
 		// compute similarity of observation to units in ctx
 		{
 			SimilarityCalculationStrategy similarityCalcStrategy;
-			similarityCalcStrategy = new SoftMaxSimilarityCalculationStrategy();
+			similarityCalcStrategy = new SoftMaxSimilarityAttentionCalculationStrategy();
 			//similarityCalcStrategy = new SoftMaxSimilarityAttentionCalculationStrategy(); // use attention strategy
-			double[] arrSim = similarityCalcStrategy.calcMatchingScore__by__stimulus(observation, ctx);
+			UnitPatternSim[] arrUnitPatternSims = similarityCalcStrategy.calcMatchingScore__by__stimulus(observation, ctx);
 			
-			if (arrSim.Length == 0) {
+			Vec vecSim = LearnerUtils.extractSim(arrUnitPatternSims); // extract only similarity values
+
+			if (vecSim.arr.Length == 0) {
 				return null;
 			}
 
-			votingOfUnits = new VotingWeightsOfUnits( VecUtils.normalize( new Vec(arrSim) ) );
+			votingOfUnits = new VotingWeightsOfUnits( VecUtils.normalize(vecSim) );
 		}
 
 		// we only acre about a specific action,    so now we need to mask out the voting for the units with the wrong action
@@ -881,14 +910,17 @@ public class CortialAlgoithm_LearnerCtx {
 			bool wasMatchFound = false;
 			
 			// search for match
-			SimilarityCalculationStrategy similarityCalcStrategy = new SoftMaxSimilarityCalculationStrategy();
-			double[] arrSim = similarityCalcStrategy.calcMatchingScore__by__stimulus(column.lastPerceivedStimulus, column.ctx);
+			SimilarityCalculationStrategy similarityCalcStrategy = new SoftMaxSimilarityAttentionCalculationStrategy();
+			UnitPatternSim[] arrUnitPatternSims = similarityCalcStrategy.calcMatchingScore__by__stimulus(column.lastPerceivedStimulus, column.ctx);
 			
 			if (verbosity >= 10) {
 				// DEBUG
 				Console.WriteLine("");
 				Console.WriteLine("sim to perceived contigency:");
-				Console.WriteLine(VecUtils.convToStr(new Vec(arrSim)));
+
+				Vec vecSim = LearnerUtils.extractSim(arrUnitPatternSims);
+
+				Console.WriteLine(VecUtils.convToStr(vecSim));
 			}
 			
 			
@@ -897,11 +929,11 @@ public class CortialAlgoithm_LearnerCtx {
 			{
 				int idxBest = -1;
 				double valBest = -2.0;
-				for (int itIdx=0; itIdx<arrSim.Length; itIdx++) {
+				for (int itIdx=0; itIdx<arrUnitPatternSims.Length; itIdx++) {
 					if (column.lastSelectedAction == column.ctx.units[itIdx].actionCode) { // action must be the same to count as the same
-						if (arrSim[itIdx] > valBest) {
+						if (arrUnitPatternSims[itIdx].sim > valBest) {
 							idxBest = itIdx;
-							valBest = arrSim[itIdx];
+							valBest = arrUnitPatternSims[itIdx].sim;
 						}
 					}
 				}
@@ -920,21 +952,9 @@ public class CortialAlgoithm_LearnerCtx {
 			
 			if (!wasMatchFound) {
 				// we add a new unit if no match was found
-				
-				// we add a new unit
-				UnitB createdUnit = new UnitB(Guid.NewGuid().ToString());
-				createdUnit.v = column.lastPerceivedStimulus;
-				createdUnit.attentionMask = VecUtils.vecMake(1.0, createdUnit.v.arr.Length); // attention mask which doesn't change any channels by default (to make testing easier)
-				createdUnit.actionCode = column.lastSelectedAction;
-				createdUnit.consequenceVec = perceivedStimulus;
-				
-				createdUnit.predictedReward = column.lastRewardFromEnvironment; // attach reward to be able to predict reward
-				// TODO LOW : revise predictedReward via some clever formula when a good enough unit was found
-				
-				// reward created unit
-				createdUnit.unitEvidence.addPositive();
-				
-				
+
+				UnitB createdUnit = UnitPatternUtils.makeUnitByStimulus(column.lastPerceivedStimulus, column.lastSelectedAction, perceivedStimulus, column.lastRewardFromEnvironment);
+								
 				column.ctx.units.Add(createdUnit);
 				// TODO : care about AIKR here
 				
@@ -1234,36 +1254,54 @@ public class SimpleCursor0Env : EnvAbstract {
 //	
 //	double[] arrSim = calcSimFn(null, null);
 
+// tuple of similarity and actual unit pattern and unit to which the pattern belongs to
+public class UnitPatternSim {
+	public UnitB unit;
+	public UnitPattern unitPattern;
+	public double sim; // similarity from 0.0 to 1.0
+
+	public UnitPatternSim(UnitB unit, UnitPattern unitPattern, double sim) {
+        this.unit = unit;
+        this.unitPattern = unitPattern;
+        this.sim = sim;
+    }
+}
+
 public class SoftMaxSimilarityAttentionCalculationStrategy : SimilarityCalculationStrategy {
-	public override double[] calcMatchingScore__by__stimulus(Vec stimulus, CtxZZZ ctx) {
+	public override UnitPatternSim[] calcMatchingScore__by__stimulus(Vec stimulus, CtxZZZ ctx) {
 		return calcSimArrByAttention(stimulus, ctx);
 	}
 
-	private static double[] calcSimArrByAttention(Vec perceivedStimulus, CtxZZZ ctx) {
-		double[] arrUnitSim = new double[ctx.units.Count];
+	private static UnitPatternSim[] calcSimArrByAttention(Vec perceivedStimulus, CtxZZZ ctx) {
+		List<UnitPatternSim> listUnitPatternSim = new List<UnitPatternSim>();
+		
+		////double[] arrUnitSim = new double[ctx.units.Count];
 	
-		int idx=0;
-		foreach (UnitB iUnit in ctx.units) {
-			Vec postAttention;
-			if (true) { // use attention?
-				postAttention = VecUtils.mulComponents(perceivedStimulus, iUnit.attentionMask);
+
+		foreach (UnitB itUnit in ctx.units) {
+			
+			foreach (UnitPattern itUnitPattern in itUnit.patterns) {
+				Vec postAttention;
+				if (true) { // use attention?
+					postAttention = VecUtils.mulComponents(perceivedStimulus, itUnitPattern.attentionMask);
+				}
+				else {
+					// COMMENTED BECAUSE NOT TRIED
+		
+					// else post attention is just perceivedStimulus
+					postAttention = perceivedStimulus;
+				}
+
+				Vec key = itUnit.v; // key vector which we take from the pattern for which the unit is looking for
+		
+				double voteSimScalar = VecUtils.calcDot(key, postAttention);
+		
+				listUnitPatternSim.Add( new UnitPatternSim(itUnit, itUnitPattern, voteSimScalar) );
 			}
-			else {
-				// COMMENTED BECAUSE NOT TRIED
-		
-				// else post attention is just perceivedStimulus
-				postAttention = perceivedStimulus;
-			}
-		
-			Vec key = iUnit.v; // key vector which we take from the pattern for which the unit is looking for
-		
-			double voteSimScalar = VecUtils.calcDot(key, postAttention);
-		
-			arrUnitSim[idx] = voteSimScalar;
-			idx++;
 		}
 		
-		return arrUnitSim;
+		////return arrUnitSim;
+		return listUnitPatternSim.ToArray();
 	}
 }
 
